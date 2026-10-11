@@ -1,6 +1,6 @@
 import streamlit as st
 
-st.set_page_config(page_page_title="DD Server- & Tausch-Manager", page_icon="👑", layout="centered")
+st.set_page_config(page_title="DD Server- & Tausch-Manager", page_icon="👑", layout="centered")
 
 # --- GLOBALER SPEICHER (Damit alle Nutzer auf dieselben Server zugreifen) ---
 @st.cache_resource
