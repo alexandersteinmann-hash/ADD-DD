@@ -38,9 +38,18 @@ if st.sidebar.button("Abmelden"):
     st.session_state.current_user = None
     st.rerun()
 
-# --- EINLADUNGS-LINK VERARBEITEN (Auto-Beitritt) ---
-query_params = st.query_params
-invite_server_id = query_params.get("invite")
+# --- EINLADUNGS-LINK SICHER VERARBEITEN ---
+try:
+    invite_server_id = st.query_params.get("invite")
+except Exception:
+    invite_server_id = None
+
+if invite_server_id and invite_server_id in all_servers:
+    target_server = all_servers[invite_server_id]
+    if st.session_state.current_user not in target_server["members"]:
+        target_server["members"].append(st.session_state.current_user)
+        target_server["balances"][st.session_state.current_user] = 1000
+    st.session_state.selected_server_id = invite_server_id
 
 if invite_server_id and invite_server_id in all_servers:
     target_server = all_servers[invite_server_id]
