@@ -103,7 +103,7 @@ with tab_dashboard:
     st.header(f"Server: {server['name']}")
     
     # Einladungs-Link anzeigen
-    st.markdown(f"🔗 *Einladungs-Link für diesen Server:* ?invite={selected_server_id}")
+    st.markdown(f"🔗 *Einladungs-Link für diesen Server:* [Diesen Server teilen](?invite={selected_server_id})")
     st.caption("Einfach den Link kopieren und weiterschicken. Neue Personen treten direkt diesem Server bei!")
 
     st.subheader("👥 Mitglieder & Kontostände")
