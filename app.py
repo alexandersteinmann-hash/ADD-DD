@@ -78,9 +78,7 @@ with tab_dashboard:
     st.header(f"Server: {server['name']}")
     
     # Einladungslink generieren
-    base_url = "http://localhost:8501" 
-    st.info(f"🔗 *Einladungs-Link für diesen Server:* {base_url}?invite={selected_server_id}")
-    
+   st.markdown(f"🔗 *Einladungs-Link für diesen Server:* [Diesen Server teilen](?invite={server_id})")
     st.subheader("👥 Mitglieder & Kontostände")
     for member in server["members"]:
         if member == server["creator"]:
