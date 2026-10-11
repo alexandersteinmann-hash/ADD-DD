@@ -1,4 +1,4 @@
-[17:25, 11.10.2026] Alexander: import streamlit as st
+ import streamlit as st
 import uuid
 
 # --- SEITENKONFIGURATION ---
