@@ -98,4 +98,4 @@ with tab_tausch:
     st.header("🔄 DD-Transfer zwischen Usern")
     st.caption("Ein Tausch wird erst ausgeführt, wenn die empfangende Person zustimmt.")
     
-    other_members = [m for m in server["members"] if m != st.s
+    other_members = [m for m in server["members"] if m != st.session_state.current_user]
