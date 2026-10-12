@@ -2,10 +2,9 @@ import streamlit as st
 
 st.set_page_config(page_title="DD Server- & Tausch-Manager", page_icon="👑", layout="centered")
 
-# --- GLOBALER SPEICHER (Damit alle Nutzer auf dieselben Server zugreifen) ---
+# --- GLOBALER SPEICHER ---
 @st.cache_resource
 def get_global_data():
-    # Standard-Server "ADD" anlegen
     return {
         "servers": {
             "7f1e42af": {
@@ -13,7 +12,8 @@ def get_global_data():
                 "creator": "alex",
                 "admins": ["alex"],
                 "members": ["alex"],
-                "balances": {"alex": 1000}
+                "balances": {"alex": 1000},
+                "requests": []  # Liste für Geldanfragen: {"von": ..., "an": ..., "betrag": ...}
             }
         }
     }
@@ -32,7 +32,7 @@ if "current_user" not in st.session_state or not st.session_state.current_user:
         st.rerun()
     st.stop()
 
-# --- SIDEBAR (LOGOUT & BENUTZER-INFO) ---
+# --- SIDEBAR ---
 st.sidebar.write(f"Eingeloggt als: *{st.session_state.current_user}*")
 if st.sidebar.button("Abmelden"):
     st.session_state.current_user = None
@@ -51,15 +51,7 @@ if invite_server_id and invite_server_id in all_servers:
         target_server["balances"][st.session_state.current_user] = 1000
     st.session_state.selected_server_id = invite_server_id
 
-if invite_server_id and invite_server_id in all_servers:
-    target_server = all_servers[invite_server_id]
-    # Falls der Nutzer noch nicht Mitglied ist, automatisch hinzufügen & 1000 DD Startguthaben geben
-    if st.session_state.current_user not in target_server["members"]:
-        target_server["members"].append(st.session_state.current_user)
-        target_server["balances"][st.session_state.current_user] = 1000
-    st.session_state.selected_server_id = invite_server_id
-
-# --- SERVER AUSWÄHLEN / BEITRETEN MANUELL ---
+# --- SERVER AUSWÄHLEN / BEITRETEN ---
 my_servers = {sid: s["name"] for sid, s in all_servers.items() if st.session_state.current_user in s["members"]}
 
 st.sidebar.markdown("---")
@@ -80,7 +72,6 @@ if not my_servers:
     st.info("Du bist noch auf keinem Server. Tritt oben links per ID bei oder erstelle einen Server.")
     st.stop()
 
-# Aktiven Server festlegen
 if "selected_server_id" not in st.session_state or st.session_state.selected_server_id not in my_servers:
     st.session_state.selected_server_id = list(my_servers.keys())[0]
 
@@ -95,17 +86,18 @@ server = all_servers[selected_server_id]
 is_creator = (st.session_state.current_user == server["creator"])
 is_admin = (st.session_state.current_user in server["admins"])
 
+# Sicherstellen, dass die Anfragen-Liste existiert (für ältere Server-Instanzen)
+if "requests" not in server:
+    server["requests"] = []
+
 # --- NAVIGATIONSTABS ---
-tab_dashboard, tab_tausch, tab_admin = st.tabs(["🏠 Übersicht", "🔄 DD untereinander tauschen", "🛡️ Verwaltung & Finanzen"])
+tab_dashboard, tab_tausch, tab_admin = st.tabs(["🏠 Übersicht", "🔄 DD tauschen & anfragen", "🛡️ Verwaltung & Finanzen"])
 
 # --- 1. ÜBERSICHT ---
 with tab_dashboard:
     st.header(f"Server: {server['name']}")
-    
-    # Einladungs-Link anzeigen
     st.markdown(f"🔗 *Einladungs-Link für diesen Server:* [Diesen Server teilen](?invite={selected_server_id})")
-    st.caption("Einfach den Link kopieren und weiterschicken. Neue Personen treten direkt diesem Server bei!")
-
+    
     st.subheader("👥 Mitglieder & Kontostände")
     for member in server["members"]:
         if member == server["creator"]:
@@ -118,48 +110,139 @@ with tab_dashboard:
         bal = server["balances"].get(member, 0)
         st.write(f"- {member} ({role}): *{bal} DD*")
 
-# --- 2. DD TAUSCHEN ---
+# --- 2. DD TAUSCHEN & ANFRAGEN ---
 with tab_tausch:
-    st.header("🔄 DD-Transfer zwischen Usern")
+    st.header("🔄 DD-Transfer & Anfragen")
+    
+    tausch_modus = st.radio("Aktion wählen:", ["Geld überweisen", "Geld anfragen", "Offene Anfragen an mich"])
     other_members = [m for m in server["members"] if m != st.session_state.current_user]
-    if not other_members:
-        st.info("Es sind noch keine anderen Mitglieder auf diesem Server.")
-    else:
-        empfaenger = st.selectbox("Empfänger auswählen:", other_members)
-        betrag = st.number_input("Betrag in DD:", min_value=1, value=10)
-        if st.button("DD überweisen"):
-            sender = st.session_state.current_user
-            if server["balances"].get(sender, 0) >= betrag:
-                server["balances"][sender] -= betrag
-                server["balances"][empfaenger] = server["balances"].get(empfaenger, 0) + betrag
-                st.success(f"{betrag} DD erfolgreich an {empfaenger} überwiesen!")
+
+    if tausch_modus == "Geld überweisen":
+        if not other_members:
+            st.info("Keine anderen Mitglieder da.")
+        else:
+            empfaenger = st.selectbox("Empfänger:", other_members)
+            betrag = st.number_input("Betrag in DD:", min_value=1, value=10)
+            if st.button("DD überweisen"):
+                sender = st.session_state.current_user
+                if server["balances"].get(sender, 0) >= betrag:
+                    server["balances"][sender] -= betrag
+                    server["balances"][empfaenger] = server["balances"].get(empfaenger, 0) + betrag
+                    st.success(f"{betrag} DD an {empfaenger} überwiesen!")
+                    st.rerun()
+                else:
+                    st.error("Nicht genügend Guthaben!")
+
+    elif tausch_modus == "Geld anfragen":
+        if not other_members:
+            st.info("Niemand da, den du fragen könntest.")
+        else:
+            ziel_person = st.selectbox("Anfragen bei:", other_members)
+            anfrage_betrag = st.number_input("Gewünschter Betrag in DD:", min_value=1, value=10)
+            if st.button("Anfrage senden"):
+                server["requests"].append({"von": st.session_state.current_user, "an": ziel_person, "betrag": anfrage_betrag})
+                st.success(f"Anfrage über {anfrage_betrag} DD an {ziel_person} gesendet!")
                 st.rerun()
-            else:
-                st.error("Nicht genügend DD Guthaben!")
+
+    elif tausch_modus == "Offene Anfragen an mich":
+        meine_anfragen = [r for r in server["requests"] if r["an"] == st.session_state.current_user]
+        if not meine_anfragen:
+            st.info("Du hast keine offenen Anfragen.")
+        else:
+            for idx, req in enumerate(meine_anfragen):
+                st.write(f"📌 *{req['von']}* fragt nach *{req['betrag']} DD*.")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button(f"Annehmen #{idx}"):
+                        if server["balances"].get(st.session_state.current_user, 0) >= req["betrag"]:
+                            server["balances"][st.session_state.current_user] -= req["betrag"]
+                            server["balances"][req["von"]] = server["balances"].get(req["von"], 0) + req["betrag"]
+                            server["requests"].remove(req)
+                            st.success("Anfrage angenommen und überwiesen!")
+                            st.rerun()
+                        else:
+                            st.error("Du hast nicht genug DD!")
+                with col2:
+                    if st.button(f"Ablehnen #{idx}"):
+                        server["requests"].remove(req)
+                        st.success("Anfrage abgelehnt.")
+                        st.rerun()
 
 # --- 3. VERWALTUNG & FINANZEN ---
 with tab_admin:
     st.header("🛡️ Verwaltung & Finanzen")
     if is_creator or is_admin:
-        st.subheader("💰 Kontostand jedes Mitglieds anpassen")
-        
-        # JEDES Mitglied wählbar (auch du selbst!)
-        target_member = st.selectbox("Mitglied auswählen:", server["members"])
-        new_balance = st.number_input("Neuer Kontostand (DD):", value=int(server["balances"].get(target_member, 0)))
-        
+        st.subheader("💰 Kontostand anpassen")
+        target_member = st.selectbox("Mitglied auswählen:", server["members"], key="bal_member")
+        new_balance = st.number_input("Neuer Kontostand (DD):", value=int(server["balances"].get(target_member, 0)), key="bal_val")
         if st.button("Kontostand aktualisieren"):
             server["balances"][target_member] = new_balance
-            st.success(f"Kontostand von {target_member} auf {new_balance} DD gesetzt!")
+            st.success(f"Kontostand von {target_member} aktualisiert!")
             st.rerun()
             
         st.markdown("---")
-        st.subheader("👑 Rechte verwalten")
-        non_admins = [m for m in server["members"] if m not in server["admins"]]
+        st.subheader("👑 Rechte & Admins verwalten")
+        non_admins = [m for m in server["members"] if m not in server["admins"] and m != server["creator"]]
         if non_admins:
-            new_admin = st.selectbox("Zum Admin befördern:", non_admins)
+            new_admin = st.selectbox("Zum Admin befördern:", non_admins, key="new_admin_box")
             if st.button("Als Admin hinzufügen"):
                 server["admins"].append(new_admin)
                 st.success(f"{new_admin} ist nun Admin!")
                 st.rerun()
+                
+        # Admins herabstufen (nur Admins/Ersteller)
+        current_admins_to_demote = [m for m in server["admins"] if m != server["creator"]]
+        if current_admins_to_demote:
+            demote_admin = st.selectbox("Admin-Rechte entziehen:", current_admins_to_demote, key="demote_box")
+            if st.button("Zum normalen Mitglied machen"):
+                server["admins"].remove(demote_admin)
+                st.success(f"{demote_admin} ist jetzt ein normales Mitglied.")
+                st.rerun()
+
+        st.markdown("---")
+        st.subheader("✏️ Namen von Mitgliedern ändern")
+        rename_target = st.selectbox("Mitglied zum Umbenennen:", server["members"], key="rename_box")
+        new_name = st.text_input("Neuer Name:", value=rename_target).strip().lower()
+        if st.button("Namen speichern") and new_name:
+            if new_name in server["members"]:
+                st.error("Dieser Name existiert bereits auf dem Server!")
+            else:
+                # In allen Listen und Strukturen aktualisieren
+                idx = server["members"].index(rename_target)
+                server["members"][idx] = new_name
+                
+                if rename_target == server["creator"]:
+                    server["creator"] = new_name
+                if rename_target in server["admins"]:
+                    server["admins"].remove(rename_target)
+                    server["admins"].append(new_name)
+                    
+                bal_val = server["balances"].pop(rename_target, 1000)
+                server["balances"][new_name] = bal_val
+                
+                # Falls der Umbenannte gerade du selbst warst
+                if st.session_state.current_user == rename_target:
+                    st.session_state.current_user = new_name
+                    
+                st.success(f"Erfolgreich in {new_name} umbenannt!")
+                st.rerun()
+
+        # Nur der Ersteller darf User kicken!
+        if is_creator:
+            st.markdown("---")
+            st.subheader("🚫 Mitglied kicken (Nur Ersteller)")
+            kickable = [m for m in server["members"] if m != server["creator"]]
+            if kickable:
+                to_kick = st.selectbox("Mitglied entfernen:", kickable, key="kick_box")
+                if st.button("Mitglied kicken"):
+                    server["members"].remove(to_kick)
+                    if to_kick in server["admins"]:
+                        server["admins"].remove(to_kick)
+                    if to_kick in server["balances"]:
+                        del server["balances"][to_kick]
+                    st.success(f"{to_kick} wurde vom Server gekickt.")
+                    st.rerun()
+            else:
+                st.info("Keine anderen Mitglieder zum Kicken da.")
     else:
         st.warning("Du hast keine Administrator-Rechte auf diesem Server.")
