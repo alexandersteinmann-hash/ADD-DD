@@ -3,7 +3,7 @@ import uuid
 
 st.set_page_config(page_title="DD Server- & Tausch-Manager", page_icon="👑", layout="centered")
 
-# --- GLOBALER SPEICHER ---
+# --- ROBUUSTER GLOBALER SPEICHER (Bleibt bei App-Updates stabil) ---
 @st.cache_resource
 def get_global_data():
     return {
@@ -15,7 +15,8 @@ def get_global_data():
                 "members": ["alex"],
                 "balances": {"alex": 1000},
                 "requests": [],
-                "updates": []
+                "updates": [],
+                "start_guthaben": 1000  # Einstellbares Startguthaben direkt in der App
             }
         }
     }
@@ -23,7 +24,7 @@ def get_global_data():
 global_data = get_global_data()
 all_servers = global_data["servers"]
 
-# --- EINFACHE ANMELDUNG (OHNE PASSWORT) ---
+# --- ANMELDUNG (OHNE PASSWORT) ---
 if "current_user" not in st.session_state or not st.session_state.current_user:
     st.title("👑 DD Server, Rechte & Tausch-System")
     st.subheader("Anmelden / Benutzer wählen")
@@ -44,7 +45,6 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("🏗️ Neuen Server erstellen")
 new_server_name = st.sidebar.text_input("Name des neuen Servers:")
 if st.sidebar.button("Server erstellen") and new_server_name:
-    # Eindeutige ID generieren (erste 8 Zeichen)
     new_sid = str(uuid.uuid4())[:8]
     all_servers[new_sid] = {
         "name": new_server_name,
@@ -53,7 +53,8 @@ if st.sidebar.button("Server erstellen") and new_server_name:
         "members": [st.session_state.current_user],
         "balances": {st.session_state.current_user: 1000},
         "requests": [],
-        "updates": []
+        "updates": [],
+        "start_guthaben": 1000
     }
     st.sidebar.success(f"Server '{new_server_name}' erfolgreich erstellt!")
     st.session_state.selected_server_id = new_sid
@@ -72,10 +73,12 @@ if invite_server_id and invite_server_id in all_servers:
     target_server = all_servers[invite_server_id]
     if st.session_state.current_user not in target_server["members"]:
         target_server["members"].append(st.session_state.current_user)
-        target_server["balances"][st.session_state.current_user] = 1000
+        # Nutzt das dynamisch eingestellte Startguthaben des Servers!
+        start_val = target_server.get("start_guthaben", 1000)
+        target_server["balances"][st.session_state.current_user] = start_val
     st.session_state.selected_server_id = invite_server_id
 
-# --- SERVER AUSWÄHLEN / MANUELL BEITRETEN ---
+# --- SERVER AUSWÄHLEN / BEITRETEN ---
 my_servers = {sid: s["name"] for sid, s in all_servers.items() if st.session_state.current_user in s["members"]}
 
 st.sidebar.markdown("---")
@@ -85,7 +88,8 @@ if st.sidebar.button("Server beitreten"):
     if join_id in all_servers:
         if st.session_state.current_user not in all_servers[join_id]["members"]:
             all_servers[join_id]["members"].append(st.session_state.current_user)
-            all_servers[join_id]["balances"][st.session_state.current_user] = 1000
+            start_val = all_servers[join_id].get("start_guthaben", 1000)
+            all_servers[join_id]["balances"][st.session_state.current_user] = start_val
             st.sidebar.success(f"Erfolgreich Server '{all_servers[join_id]['name']}' beigetreten!")
             st.session_state.selected_server_id = join_id
             st.rerun()
@@ -110,11 +114,13 @@ server = all_servers[selected_server_id]
 is_creator = (st.session_state.current_user == server["creator"])
 is_admin = (st.session_state.current_user in server["admins"])
 
-# Sicherstellen, dass Listen existieren
+# Sicherheits-Checks für ältere Server-Daten
 if "requests" not in server:
     server["requests"] = []
 if "updates" not in server:
     server["updates"] = []
+if "start_guthaben" not in server:
+    server["start_guthaben"] = 1000
 
 # --- NAVIGATIONSTABS ---
 tab_dashboard, tab_tausch, tab_admin = st.tabs(["🏠 Übersicht", "🔄 DD tauschen & anfragen", "🛡️ Verwaltung & Finanzen"])
@@ -124,10 +130,9 @@ with tab_dashboard:
     st.header(f"Server: {server['name']}")
     st.markdown(f"🔗 *Einladungs-Link für diesen Server:* [Diesen Server teilen](?invite={selected_server_id})")
     
-    # Server-Updates anzeigen
     if server["updates"]:
         st.markdown("---")
-        st.subheader("📢 Aktuelle Server-Updates & News")
+        st.subheader("📢 Server-News / Updates")
         for update_text in reversed(server["updates"]):
             st.info(update_text)
             
@@ -207,12 +212,30 @@ with tab_admin:
     st.header("🛡️ Verwaltung & Finanzen")
     if is_creator or is_admin:
         
-        # Server-Updates posten
-        st.subheader("📢 Server-Update / Ankündigung posten")
-        new_update_text = st.text_area("Update-Text für alle Mitglieder eingeben:")
-        if st.button("Update veröffentlichen") and new_update_text:
-            server["updates"].append(f"*{st.session_state.current_user}:* {new_update_text}")
-            st.success("Update erfolgreich veröffentlicht! Es wird nun im Dashboard angezeigt.")
+        # --- APP-UPDATE / SERVER-EINSTELLUNGEN DIREKT IN DER APP ---
+        st.subheader("⚙️ Server-Live-Einstellungen (Update ohne Code)")
+        
+        # 1. Servernamen direkt in der App ändern
+        neuer_server_name = st.text_input("Servernamen direkt ändern:", value=server["name"])
+        if st.button("Servernamen speichern") and neuer_server_name:
+            server["name"] = neuer_server_name
+            st.success("Servername erfolgreich aktualisiert!")
+            st.rerun()
+
+        # 2. Standard-Startguthaben für neue Mitglieder einstellen
+        neues_startguthaben = st.number_input("Standard-Startguthaben für künftige Mitglieder (DD):", value=int(server["start_guthaben"]))
+        if st.button("Startguthaben speichern"):
+            server["start_guthaben"] = neues_startguthaben
+            st.success(f"Neues Startguthaben auf {neues_startguthaben} DD gesetzt!")
+            st.rerun()
+
+        # 3. Update-Meldung im Server veröffentlichen
+        st.markdown("---")
+        st.subheader("📢 Update-Ankündigung für alle Spieler posten")
+        new_update_text = st.text_area("Schreibe was sich im Update geändert hat:")
+        if st.button("Update im Server veröffentlichen") and new_update_text:
+            server["updates"].append(f"🎮 *Server-Update:* {new_update_text}")
+            st.success("Update veröffentlicht! Alle Spieler sehen es sofort im Dashboard.")
             st.rerun()
 
         st.markdown("---")
@@ -248,7 +271,7 @@ with tab_admin:
         new_name = st.text_input("Neuer Name:", value=rename_target).strip().lower()
         if st.button("Namen speichern") and new_name:
             if new_name in server["members"]:
-                st.error("Dieser Name bereits auf dem Server vergeben!")
+                st.error("Dieser Name ist bereits vergeben!")
             else:
                 idx = server["members"].index(rename_target)
                 server["members"][idx] = new_name
